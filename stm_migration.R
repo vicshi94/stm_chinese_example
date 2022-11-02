@@ -2,14 +2,15 @@ library(stm)
 library(textir)
 
 # 显示中文
-library(showtext)
-font_files()
-showtext_auto(enable = TRUE)
-font_add('Songti', 'Songti.ttc')
+# library(showtext)
+# font_files()
+#showtext_auto(enable = TRUE)
+# font_add('Songti', 'Songti.ttc')
 
 # 读取数据 ----------------------------------------------------
 
-data<-read.csv('../../data0629/info_stm_1030.csv',sep = ',', quote = '',
+#load(stm.Rdata)
+data<-read.csv(file.choose(),sep = ',', quote = '',
                header = TRUE, fileEncoding = 'utf-8')
 
 # 提取数据 ----------------------------------------------------
@@ -80,8 +81,40 @@ storage <- searchK(
   )
 
 # 可视化结果
+
+# 自定义 plot.searchK(), 显示Exclusivity
+plt_searchK<-function(x, ...){
+  oldpar <- par(no.readonly=TRUE)
+  g <- x$results
+  par(mfrow=c(3,2),mar=c(4,4,2,2),oma=c(1,1,1,1))
+  
+  plot(g$K,g$heldout,type="p", main="Held-Out Likelihood", xlab="", ylab="")
+  lines(g$K,g$heldout,lty=1,col=1)
+  
+  plot(g$K,g$residual,type="p", main="Residuals", xlab="", ylab="")
+  lines(g$K,g$residual,lty=1,col=1 )
+  
+  if(!is.null(g$semcoh)){
+    plot(g$K,g$semcoh,type="p", main="Semantic Coherence", xlab="", ylab="")
+    lines(g$K,g$semcoh,lty=1,col=1 ) 
+  }
+  
+  plot(g$K,g$exclus,type="p", main="Exclusivity", xlab="", ylab="")
+  lines(g$K,g$exclus,lty=1,col=1 )  
+  
+  plot(g$K,g$bound,type="p", main="Bound", xlab="Number of Topics (K)", ylab="")
+  lines(g$K,g$bound,lty=1,col=1 ) 
+  
+  plot(g$K,g$lbound,type="p", main="Lower Bound", xlab="Number of Topics (K)", ylab="")
+  lines(g$K,g$lbound,lty=1,col=1 ) 
+  
+  title("Diagnostic Values by Number of Topics", outer=TRUE)  
+  par(oldpar)
+}
+
 # pdf("output/stm-plot-ntopics.pdf")
-plot(storage)
+# plot(storage)
+plt_searchK(storage)
 # dev.off
 
 t <- storage$results[[2]] # exclusivity

@@ -134,7 +134,7 @@ print(labelTopicsSel)
 
 # sink("output/stm-list-sagelabel.txt",append = FALSE, split = TRUE)
 print(sageLabels(poliblogPrevFit)) #另一种输出方式，更详细
-# sink
+# sink()
 
 # 列出主题典型文档
 shortdoc <- substr(out$meta$fulltext,1,200) # 前200个字符
@@ -169,7 +169,7 @@ summary(prep, topics=2)
 # 可视化结果 ---------------------------------------------------
 #
 # 主题占比条形图
-# pdf("top-topic.pdf)
+# pdf("top-topic.pdf")
 plot(poliblogPrevFit,type = 'summary', xlim = c(0,.3))
 # dev.off()
 

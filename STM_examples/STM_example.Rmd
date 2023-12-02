@@ -1,0 +1,230 @@
+---
+title: "STM_example"
+author: "vicshi94"
+date: "2023-12-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### 0. Environments
+
+```{r environments, results='hide'}
+library(stm)
+library(textir)
+
+# 显示中文
+library(showtext)
+font_files()
+showtext_auto(enable = TRUE)
+font_add('Songti', 'Songti.ttc')
+```
+
+### 1. 读取数据
+
+```{r import_data}
+# load(.Rdata)
+# data<-read.csv(file.choose(),sep = ',', quote = '',
+#               header = TRUE, fileEncoding = 'utf-8')
+data <- read.csv('./corpus_segmented.csv',fileEncoding = 'utf-8')
+```
+
+### 2. 提取数据
+
+利用textProcessor算法提取数据,将data文本列和data作为参数 textProcessor暂不支持中文，需要自行预处理 wordLength=c(3,Inf)表示移除短于3，长于inf的词语：中文调为1以免单字被删
+
+```{r processor}
+processed <- textProcessor(data$Segmented_Content,metadata=data,wordLengths=c(1,Inf))
+```
+
+### 3. 数据预处理
+
+查看不同阈值删除doc,words,token情况
+
+```{r pre}
+# pdf("output/stm-plot-removed.pdf") # 生成结果文件用的
+plotRemoved(processed$documents, lower.thresh=seq(from = 1, to = 100, by =1))
+# dev.off() # 生成结果文件用的
+```
+
+根据结果确定lower.thresh取值 preDocuments默认值为1 在此例中，我们决定将lower.thresh设为10
+
+**建立完整文档-协变量数据**
+
+```{r prepDocuments}
+out <- prepDocuments(
+  documents = processed$documents, #包含索引词的计数及文档列表
+  vocab = processed$vocab, # 索引词的关联单词
+  meta = processed$meta, #包含文档协变量
+  lower.thresh = 10)
+```
+
+### 4. 确定主题数 (非必需)
+
+(如果定好生成几个Topic了，就跳过这一步)
+
+```{r searchK, results='hide'}
+storage <- searchK(
+  out$documents, out$vocab, 
+  K = 5:20, # 生成5～20个topic比较
+  prevalence = ~版次, #比如我们想查看版次之间语义区别
+  data = out$meta
+  )
+```
+
+**可视化结果**
+
+```{r plotSearchK}
+# 自定义 plot.searchK()
+plt_searchK<-function(x, ...){
+  oldpar <- par(no.readonly=TRUE)
+  g <- x$results
+  par(mfrow=c(3,2),mar=c(4,4,2,2),oma=c(1,1,1,1))
+  
+  plot(g$K,g$heldout,type="p", main="Held-Out Likelihood", xlab="", ylab="")
+  lines(g$K,g$heldout,lty=1,col=1)
+  
+  plot(g$K,g$residual,type="p", main="Residuals", xlab="", ylab="")
+  lines(g$K,g$residual,lty=1,col=1 )
+  
+  if(!is.null(g$semcoh)){
+    plot(g$K,g$semcoh,type="p", main="Semantic Coherence", xlab="", ylab="")
+    lines(g$K,g$semcoh,lty=1,col=1 ) 
+  }
+  
+  plot(g$K,g$exclus,type="p", main="Exclusivity", xlab="", ylab="")
+  lines(g$K,g$exclus,lty=1,col=1 )  
+  
+  plot(g$K,g$bound,type="p", main="Bound", xlab="Number of Topics (K)", ylab="")
+  lines(g$K,g$bound,lty=1,col=1 ) 
+  
+  plot(g$K,g$lbound,type="p", main="Lower Bound", xlab="Number of Topics (K)", ylab="")
+  lines(g$K,g$lbound,lty=1,col=1 ) 
+  
+  title("Diagnostic Values by Number of Topics", outer=TRUE)  
+  par(oldpar)
+}
+
+# 可视化结果
+# pdf("stm-plot-ntopics.pdf")
+plt_searchK(storage)
+# dev.off()
+```
+
+结果部分主要看Coherence和Exclusivity，需要这两个值都比较高。 严格来说，需要多次模拟，然后决定，但是基本上还是个人评估为主
+
+```{r stats_searchK, eval=FALSE}
+# 获取具体统计结果
+t <- storage$results[[2]] # exclusivity
+t <- storage$results[[3]] # coherence
+```
+
+这里为了演示，选取Topic = 5
+
+### 5. 指定主题数模型选择
+
+```{r selectModel, results='hide'}
+poliblogSelect <- selectModel(
+  out$documents, out$vocab, K = 5, 
+  prevalence = ~版次, #协变量
+  max.em.its = 200, data = out$meta, 
+  runs = 20, #20 models
+  seed = 20231202
+  )
+```
+可视化结果，通过语义coherence和exclusivity选择模型(靠右上)
+```{r plotSelectModel}
+plotModels(poliblogSelect, pch = c(1,2,3,4), legend.position = 'bottomright')
+```
+选择模型 [1,2,3,4]
+```{r selectmodel}
+selectmodel <- poliblogSelect$runout[[1]]
+```
+
+### 6.模型结果
+高频词
+```{r topic_keywords}
+labelTopicsSel <- labelTopics(selectmodel, c(1:5)) # 输出所有5个主题
+# sink("output/labelTopics-selected.txt",append = FALSE, split = TRUE)
+print(labelTopicsSel)
+# print(sageLabels(selectmodel)) #另一种输出方式
+# sink()
+```
+
+列出主题典型文档
+```{r topic_example}
+shortdoc <- substr(out$meta$Segmented_Content,1,50) # 前50个字符
+thoughts2 <- findThoughts(
+  selectmodel, texts = shortdoc, n=3, topics=2 #展示Topic{k}的n篇文档
+  )$docs[[1]]
+# pdf("output/findThoughts-Topic1.pdf")
+plotQuote(thoughts2,width = 30, main = 'Topic 2')
+# dev.off()
+```
+
+
+列出主题典型文档
+```{r topic_examples}
+# 多个结果
+thoughts4 <- findThoughts(
+  selectmodel, texts = shortdoc, n=3, topics=4 #展示Topic{k}的n篇文档
+)$docs[[1]]
+# pdf("output/findThoughts-Topics.pdf")
+par(mfrow=c(1,2),mar=c(.5,.5,1,.5)) # 2x1的表格
+plotQuote(thoughts2,width = 30, main = 'Topic 2')
+plotQuote(thoughts4,width = 30, main = 'Topic 4')
+# dev.off()
+```
+
+评估协变量对所有主题的影响
+```{r estimateEffect}
+out$meta$版次 <- as.factor(out$meta$版次)
+prep <- estimateEffect(
+  # 对所有主题的影响
+  1:5 ~ 版次, 
+  selectmodel, meta=out$meta,
+  uncertainty = 'Global' # OR "Local", "None"
+  # 考虑全局不确定性，选择None会加速计算时间，获得更窄的置信区间
+)
+
+summary(prep, topics=1)
+summary(prep, topics=2)
+```
+
+### 7.其他可视化结果
+主题占比条形图
+```{r top_topic}
+# pdf("top-topic.pdf)
+plot(selectmodel,type = 'summary', xlim = c(0,.3))
+# dev.off()
+```
+主题关系对比图
+```{r prevalence}
+# pdf("stm-plot-topical-prevalence-contrast.pdf")
+plot(
+  prep, covariate = '版次', topics = c(1,2,3,4,5),
+  model = selectmodel, method = 'difference',
+  cov.value1 = '第2版', cov.value2 = '第4版',
+  xlab = '第2版 ... 第4版',
+  main = 'Effect of 第2版 v.s. 第4版',
+  xlim = c(-.8,.8), # 控制x轴范围
+  labeltype = 'custom',
+  custom.labels = c("主题1", '主题2', "自定义主题名","主题4", '主题5')
+)
+#dev.off()
+```
+结果解读：
+Effect不能与0相交，具体数值参考【评估协变量对所有主题的影响】
+结论：
+第2版更喜欢报道主题5，第4版更喜欢报道主题1 (t = 15.592, p<.001)
+
+主题关系网络图
+```{r topic_network, eval=FALSE}
+# require igraph
+mod.out.corr <- topicCorr(selectmodel)
+# pdf("stm-plot-topic-correlations.pdf")
+plot(mod.out.corr)
+# dev.off()
+```
